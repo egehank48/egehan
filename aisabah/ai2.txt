@@ -1,0 +1,280 @@
+# =======================================================
+# HÜCRE 1: KÜTÜPHANELER, VERİ YÜKLEME VE BÖLME
+# =======================================================
+
+# --- Kütüphaneler ---
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.model_selection import train_test_split # YENİ VE ÇOK ÖNEMLİ!
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+
+# Gerekli tüm modelleri baştan import edelim
+from sklearn.linear_model import LinearRegression # Q1 için gerekli
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
+from sklearn.neural_network import MLPClassifier
+from sklearn.model_selection import GridSearchCV
+
+sns.set()
+
+# --- Veri Yükleme ---
+# Sınavda verilecek dosya adını buraya yaz
+df = pd.read_csv("sinav_veriseti.csv") 
+
+# --- Veriyi Anlama ---
+print("Veri Seti Bilgisi:")
+print(df.info())
+print("\nSınıf Dağılımı:")
+print(df['class'].value_counts()) # Sınıfların dengeli olup olmadığını kontrol et
+
+# --- Özellik ve Hedef Belirleme ---
+X = df.drop('class', axis=1) # 'class' sütunu hariç hepsi özellik
+y = df['class']              # 'class' sütunu hedef
+
+# --- EĞİTİM VE TEST VERİSİNE BÖLME (EN KRİTİK ADIM) ---
+# Verinin %80'i eğitim, %20'si test olacak şekilde bölelim.
+# random_state=42, sonuçların her çalıştırmada aynı olmasını sağlar.
+# stratify=y, eğitim ve test setlerindeki sınıf dağılımını orijinal veriyle aynı oranda tutar. Çok sınıflı ve dengesiz veriler için hayati önemdedir.
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+
+print("\nEğitim Verisi Boyutu:", X_train.shape)
+print("Test Verisi Boyutu:", X_test.shape)
+
+# --- Veri Ölçeklendirme (Scaling) ---
+# Scaler'ı SADECE eğitim verisi üzerinde eğitiyoruz
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test) # Test verisini sadece transform ediyoruz
+
+
+
+
+
+
+# =======================================================
+# HÜCRE 2: Q1 CEVABI
+# =======================================================
+
+# --- Adım 1: Özellik seçimi için Lineer Regresyon eğit ---
+# Not: Bu sadece katsayıları görmek için, modelin tahminleri kullanılmayacak.
+lin_reg = LinearRegression()
+lin_reg.fit(X_train_scaled, y_train)
+
+# --- Adım 2: Katsayıları al ve önemlerini sırala ---
+# Katsayıların mutlak değeri, özelliğin önemini gösterir (işaretine bakılmaksızın)
+feature_importance = pd.DataFrame({
+    'feature': X_train.columns,
+    'importance': np.abs(lin_reg.coef_)
+})
+
+# Önem sırasına göre küçükten büyüğe sırala
+feature_importance = feature_importance.sort_values('importance', ascending=True)
+
+print("Lineer Regresyon Katsayılarına Göre Özellik Önemi:")
+print(feature_importance)
+
+# --- Adım 3: En önemsiz iki özelliği bul ve çıkar ---
+features_to_remove = feature_importance.head(2)['feature'].tolist()
+print(f"\nÇıkarılacak Özellikler: {features_to_remove}")
+
+# Kalan özelliklerle yeni bir eğitim/test seti oluştur
+X_train_reduced = X_train.drop(columns=features_to_remove)
+X_test_reduced = X_test.drop(columns=features_to_remove)
+
+# Bu yeni setleri de ölçeklendir
+scaler_reduced = StandardScaler()
+X_train_reduced_scaled = scaler_reduced.fit_transform(X_train_reduced)
+X_test_reduced_scaled = scaler_reduced.transform(X_test_reduced)
+
+# --- Adım 4: Kalan özelliklerle bir model kur ve doğruluğu sun ---
+# Basit bir modelle başlayalım: Logistic Regression
+model_q1 = LogisticRegression(random_state=42)
+model_q1.fit(X_train_reduced_scaled, y_train)
+y_pred_q1 = model_q1.predict(X_test_reduced_scaled)
+accuracy_q1 = accuracy_score(y_test, y_pred_q1)
+print(f"\nİki özellik çıkarıldıktan sonra Logistic Regression Test Doğruluğu: {accuracy_q1:.4f}")
+
+# --- Adım 5: Accuracy'i iyileştirmeye çalış ---
+# Daha güçlü bir model (Random Forest) deneyelim
+model_q1_improved = RandomForestClassifier(random_state=42)
+model_q1_improved.fit(X_train_reduced_scaled, y_train)
+y_pred_q1_imp = model_q1_improved.predict(X_test_reduced_scaled)
+accuracy_q1_imp = accuracy_score(y_test, y_pred_q1_imp)
+print(f"İyileştirme Sonrası (Random Forest) Test Doğruluğu: {accuracy_q1_imp:.4f}")
+
+
+
+# =======================================================
+# HÜCRE 3: Q2 CEVABI
+# =======================================================
+
+# Modelleri ve isimlerini bir dictionary'de tutalım
+models = {
+    "Logistic Regression": LogisticRegression(max_iter=1000, random_state=42),
+    "Random Forest": RandomForestClassifier(random_state=42),
+    "Support Vector Machine": SVC(random_state=42)
+}
+
+# Sonuçları saklamak için bir liste
+results = []
+
+# Tüm özellikleri kullanarak (X_train_scaled, X_test_scaled) modelleri eğitelim
+for name, model in models.items():
+    # Modeli eğit
+    model.fit(X_train_scaled, y_train)
+    
+    # Eğitim ve Test doğruluklarını hesapla
+    train_accuracy = accuracy_score(y_train, model.predict(X_train_scaled))
+    test_accuracy = accuracy_score(y_test, model.predict(X_test_scaled))
+    
+    # Sonuçları kaydet
+    results.append({
+        "Model": name,
+        "Eğitim Doğruluğu": train_accuracy,
+        "Test Doğruluğu": test_accuracy
+    })
+    
+    print(f"--- {name} ---")
+    print(f"Eğitim Doğruluğu: {train_accuracy:.4f}")
+    print(f"Test Doğruluğu: {test_accuracy:.4f}")
+    
+    # Overfitting/Underfitting Yorumu
+    if train_accuracy > test_accuracy + 0.1: # Arada %10'dan fazla fark varsa
+        print("Yorum: Eğitim ve test doğrulukları arasındaki büyük fark, belirgin bir OVERFITTING'e işaret ediyor.")
+    elif train_accuracy < 0.6 and test_accuracy < 0.6: # Doğruluklar genel olarak düşükse
+        print("Yorum: Hem eğitim hem de test doğruluklarının düşük olması, modelin veriyi yeterince öğrenemediğini (UNDERFITTING) gösterebilir.")
+    else:
+        print("Yorum: Eğitim ve test doğrulukları birbirine yakın, model iyi bir genelleme performansı gösteriyor.")
+    print("-" * 30)
+
+# Sonuçları güzel bir tablo olarak göster
+results_df = pd.DataFrame(results)
+print("\n--- Model Karşılaştırma Tablosu ---")
+print(results_df)
+
+
+
+# =======================================================
+# HÜCRE 4: Q3 CEVABI
+# =======================================================
+
+# Varsayalım ki Q2'de SVM modelinin doğruluğu %59'un altında kaldı.
+# Onu iyileştirelim. (Eğer hepsi yüksekse, yine de birini seçip bu adımı yap)
+
+print("--- SVM Modelini İyileştirme ---")
+
+# Hiperparametre aralığını tanımla
+param_grid_svm = {
+    'C': [0.1, 1, 10, 50],
+    'gamma': [0.001, 0.01, 0.1],
+    'kernel': ['rbf']
+}
+
+# GridSearchCV'yi çalıştır
+grid_svm = GridSearchCV(SVC(random_state=42), param_grid_svm, cv=3, scoring='accuracy', n_jobs=-1)
+grid_svm.fit(X_train_scaled, y_train)
+
+# En iyi modeli seç
+best_svm = grid_svm.best_estimator_
+print("Bulunan En İyi Parametreler:", grid_svm.best_params_)
+
+# İyileştirilmiş modelin performansını ölç
+train_acc_imp = accuracy_score(y_train, best_svm.predict(X_train_scaled))
+test_acc_imp = accuracy_score(y_test, best_svm.predict(X_test_scaled))
+y_pred_imp = best_svm.predict(X_test_scaled)
+
+print(f"\nİyileştirilmiş SVM Eğitim Doğruluğu: {train_acc_imp:.4f}")
+print(f"İyileştirilmiş SVM Test Doğruluğu: {test_acc_imp:.4f}")
+
+# --- Çok Sınıflı Karmaşıklık Matrisi ---
+cm_multi = confusion_matrix(y_test, y_pred_imp)
+class_labels = sorted(y.unique()) # Sınıf etiketlerini al (0, 1, 2, 3, 4)
+
+plt.figure(figsize=(8, 6))
+sns.heatmap(cm_multi, annot=True, fmt='d', cmap='Blues', 
+            xticklabels=class_labels, yticklabels=class_labels)
+plt.xlabel("Tahmin Edilen Sınıf")
+plt.ylabel("Gerçek Sınıf")
+plt.title("İyileştirilmiş SVM için Karmaşıklık Matrisi")
+plt.show()
+
+# --- Matris Üzerine Kısa Tartışma ---
+print("\nKarmaşıklık Matrisi Yorumu:")
+print("Bu 5x5 matris, modelin her bir sınıf için performansını gösterir.")
+print("Köşegen üzerindeki değerler (sol üstten sağ alta) doğru tahmin edilen örnek sayısıdır.")
+print("Köşegen dışındaki değerler ise modelin yaptığı hatalardır. Örneğin, satır 1, sütun 3'teki değer, gerçekte 1. sınıf olan kaç örneğin yanlışlıkla 3. sınıf olarak tahmin edildiğini gösterir.")
+print("Hangi sınıfların birbiriyle daha çok karıştırıldığını bu matristen analiz edebiliriz.")
+
+
+# =======================================================
+# HÜCRE 5: Q4 CEVABI
+# =======================================================
+
+print("--- 3 Gizli Katmanlı Yapay Sinir Ağı ---")
+
+# 3 gizli katmanlı bir mimari tanımla: (100 nöron, 50 nöron, 25 nöron)
+nn_q4 = MLPClassifier(hidden_layer_sizes=(100, 50, 25), 
+                      max_iter=1000, 
+                      early_stopping=True, # Overfitting'i önlemek için
+                      random_state=42)
+
+nn_q4.fit(X_train_scaled, y_train)
+
+# Eğitim ve Test doğruluklarını sun
+train_acc_q4 = accuracy_score(y_train, nn_q4.predict(X_train_scaled))
+test_acc_q4 = accuracy_score(y_test, nn_q4.predict(X_test_scaled))
+
+print(f"YSA Eğitim Doğruluğu: {train_acc_q4:.4f}")
+print(f"YSA Test Doğruluğu: {test_acc_q4:.4f}")
+
+
+
+# =======================================================
+# HÜCRE 6: Q5 CEVABI
+# =======================================================
+
+# Varsayalım ki Q4'teki doğruluk %67'nin altında kaldı.
+# Hiperparametre optimizasyonu ile iyileştirelim.
+# NOT: YSA için GridSearchCV çok uzun sürebilir, bu yüzden parametre aralığını küçük tutuyoruz.
+
+print("--- YSA Modelini İyileştirme ---")
+
+param_grid_nn = {
+    'hidden_layer_sizes': [(50, 25), (100, 50)], # Farklı mimariler
+    'alpha': [0.0001, 0.001], # Regülarizasyon parametresi
+    'learning_rate_init': [0.001, 0.01] # Öğrenme oranı
+}
+
+grid_nn = GridSearchCV(MLPClassifier(max_iter=500, early_stopping=True, random_state=42), 
+                       param_grid_nn, cv=3, scoring='accuracy', n_jobs=-1)
+
+grid_nn.fit(X_train_scaled, y_train)
+
+best_nn = grid_nn.best_estimator_
+print("Bulunan En İyi YSA Parametreleri:", grid_nn.best_params_)
+
+# İyileştirilmiş modelin performansını ölç
+train_acc_q5 = accuracy_score(y_train, best_nn.predict(X_train_scaled))
+test_acc_q5 = accuracy_score(y_test, best_nn.predict(X_test_scaled))
+
+print(f"\nİyileştirilmiş YSA Eğitim Doğruluğu: {train_acc_q5:.4f}")
+print(f"İyileştirilmiş YSA Test Doğruluğu: {test_acc_q5:.4f}")
+
+# --- Kayıp Grafiği (Loss Curve) ---
+plt.figure(figsize=(10, 6))
+plt.plot(best_nn.loss_curve_)
+plt.title("Model Kayıp Grafiği (Loss Curve)")
+plt.xlabel("Eğitim Turu (Epoch)")
+plt.ylabel("Kayıp (Loss)")
+plt.grid(True)
+plt.show()
+
+# --- Grafik Yorumu ---
+print("\nKayıp Grafiği Yorumu:")
+print("Bu grafik, modelin eğitim sürecinde ne kadar 'yanlış' yaptığını gösterir. Grafiğin aşağı doğru gitmesi, modelin her turda veriyi daha iyi öğrendiğini gösterir.")
+print("Grafiğin bir noktada düzleşmesi, modelin öğrenebileceği kadarını öğrendiğini ve eğitimin durduğunu (veya durması gerektiğini) belirtir.")
+print("early_stopping=True kullandığımız için, model overfitting yapmaya başlamadan önce eğitim otomatik olarak durdurulmuştur, bu da sağlıklı bir öğrenme sürecidir.")

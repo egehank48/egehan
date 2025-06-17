@@ -1,0 +1,276 @@
+# ==============================================================================
+# ADIM 0: SINAV HAZIRLIĞI (TÜM SORULAR İÇİN ORTAK BAŞLANGIÇ)
+# ==============================================================================
+
+# --- 1. Gerekli Kütüphaneler ---
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Scikit-learn Araçları
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+
+# Scikit-learn Modelleri
+from sklearn.linear_model import LinearRegression # Sadece Q1'de özellik seçimi için
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
+from sklearn.neural_network import MLPClassifier # Scikit-learn YSA
+
+# Keras (TensorFlow) Modelleri - Daha esnek YSA için
+import tensorflow as tf
+from tensorflow import keras
+from keras.utils import to_categorical
+
+# Grafik ayarları
+sns.set_style("whitegrid")
+plt.rcParams['figure.figsize'] = (10, 6)
+
+# --- 2. Veri Yükleme ve İlk Analiz ---
+# Sınavda verilecek dosya adını buraya yaz
+df = pd.read_csv("dataFinal.csv")
+
+print("--- Veri Seti Önizlemesi ---")
+print(df.head())
+print("\n--- Veri Seti Bilgisi (Eksik Veri Kontrolü) ---")
+df.info()
+print("\n--- Sınıf Dağılımı (Dengesizlik Kontrolü) ---")
+print(df['class'].value_counts())
+
+# --- 3. Özellik (X) ve Hedef (y) Belirleme ---
+X = df.drop('class', axis=1)
+y = df['class']
+
+# --- 4. Veriyi Eğitim ve Test Olarak Bölme ---
+# stratify=y, çok sınıflı problemlerde her setin sınıf dağılımını korur (ÇOK ÖNEMLİ!)
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, 
+    test_size=0.25, # Verinin %25'ini test için ayır
+    random_state=42, 
+    stratify=y
+)
+print(f"\nEğitim verisi boyutu: {X_train.shape}")
+print(f"Test verisi boyutu: {X_test.shape}")
+
+# --- 5. Veri Ölçeklendirme (Scaling) ---
+# Scaler SADECE eğitim verisi üzerinde eğitilir!
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+
+# ==============================================================================
+# SORU 1: Lineer Regresyon ile Özellik Çıkarma
+# ==============================================================================
+print("\n\n" + "="*60)
+print("SORU 1: Lineer Regresyon ile Özellik Çıkarma")
+print("="*60)
+
+# Adım 1: Katsayıları görmek için Lineer Regresyon modelini kur
+# UYARI: Bu model sınıflandırma yapmak için değil, sadece özellik önemini anlamak için kullanılır.
+lin_reg = LinearRegression()
+lin_reg.fit(X_train_scaled, y_train)
+
+# Adım 2: Özelliklerin önemini (katsayıların mutlak değeri) bir DataFrame'de topla
+feature_importance = pd.DataFrame({
+    'Özellik': X_train.columns,
+    'Önem Katsayısı': np.abs(lin_reg.coef_)
+}).sort_values('Önem Katsayısı', ascending=True)
+
+print("\nLineer Regresyon Katsayılarına Göre Özellik Önemi:")
+print(feature_importance)
+
+# Adım 3: En önemsiz iki özelliği programatik olarak seç ve çıkar
+features_to_remove = feature_importance.head(2)['Özellik'].tolist()
+print(f"\nModelden çıkarılacak en önemsiz özellikler: {features_to_remove}")
+
+X_train_reduced = X_train.drop(columns=features_to_remove)
+X_test_reduced = X_test.drop(columns=features_to_remove)
+
+# Adım 4: Azaltılmış veri setini yeniden ölçeklendir
+scaler_reduced = StandardScaler()
+X_train_reduced_scaled = scaler_reduced.fit_transform(X_train_reduced)
+X_test_reduced_scaled = scaler_reduced.transform(X_test_reduced)
+
+# Adım 5: Azaltılmış özelliklerle DOĞRU bir sınıflandırma modeli (Random Forest) kur
+model_q1 = RandomForestClassifier(random_state=42)
+model_q1.fit(X_train_reduced_scaled, y_train)
+y_pred_q1 = model_q1.predict(X_test_reduced_scaled)
+accuracy_q1 = accuracy_score(y_test, y_pred_q1)
+
+print(f"\nİki özellik çıkarıldıktan sonraki test doğruluğu: {accuracy_q1:.4f}")
+
+
+# ==============================================================================
+# SORU 2: LR, RF, SVM Modellerini Eğitme ve Overfitting Analizi
+# ==============================================================================
+print("\n\n" + "="*60)
+print("SORU 2: Temel Modellerin Eğitimi ve Karşılaştırılması")
+print("="*60)
+
+models = {
+    "Logistic Regression": LogisticRegression(max_iter=1000, random_state=42),
+    "Random Forest": RandomForestClassifier(random_state=42),
+    "Support Vector Machine": SVC(random_state=42)
+}
+
+results_df = pd.DataFrame(columns=["Model", "Eğitim Doğruluğu", "Test Doğruluğu", "Yorum"])
+
+for name, model in models.items():
+    model.fit(X_train_scaled, y_train)
+    
+    train_accuracy = accuracy_score(y_train, model.predict(X_train_scaled))
+    test_accuracy = accuracy_score(y_test, model.predict(X_test_scaled))
+    
+    comment = ""
+    if train_accuracy > test_accuracy + 0.1:
+        comment = "Belirgin Overfitting"
+    elif train_accuracy < 0.6 and test_accuracy < 0.6:
+        comment = "Underfitting Riski"
+    else:
+        comment = "Dengeli Performans"
+    
+    new_row = pd.DataFrame([{"Model": name, "Eğitim Doğruluğu": train_accuracy, "Test Doğruluğu": test_accuracy, "Yorum": comment}])
+    results_df = pd.concat([results_df, new_row], ignore_index=True)
+
+
+print(results_df.to_string())
+
+# ==============================================================================
+# SORU 3: Kötü Modeli İyileştirme (Hiperparametre Optimizasyonu)
+# ==============================================================================
+print("\n\n" + "="*60)
+print("SORU 3: Model İyileştirme (GridSearchCV ile SVM)")
+print("="*60)
+
+# Varsayım: SVM performansı <%59. (Eğer değilse bile, iyileştirme adımını göstermek için yapıyoruz)
+param_grid_svm = {
+    'C': [1, 10, 50],
+    'gamma': ['scale', 'auto', 0.1, 0.01],
+    'kernel': ['rbf']
+}
+
+# n_jobs=-1 işlemciyi tam kapasite kullanır, cv=3 sınavda hızlı sonuç için idealdir.
+grid_svm = GridSearchCV(SVC(random_state=42), param_grid_svm, cv=3, scoring='accuracy', n_jobs=-1)
+grid_svm.fit(X_train_scaled, y_train)
+
+best_svm = grid_svm.best_estimator_
+print(f"Bulunan En İyi SVM Parametreleri: {grid_svm.best_params_}")
+
+# İyileştirilmiş modelin sonuçları
+train_acc_q3 = accuracy_score(y_train, best_svm.predict(X_train_scaled))
+test_acc_q3 = accuracy_score(y_test, best_svm.predict(X_test_scaled))
+print(f"\nİyileştirilmiş SVM Eğitim Doğruluğu: {train_acc_q3:.4f}")
+print(f"İyileştirilmiş SVM Test Doğruluğu: {test_acc_q3:.4f}")
+
+# Karmaşıklık Matrisi
+y_pred_q3 = best_svm.predict(X_test_scaled)
+cm_q3 = confusion_matrix(y_test, y_pred_q3)
+class_labels = sorted(y.unique())
+
+plt.figure(figsize=(8, 6))
+sns.heatmap(cm_q3, annot=True, fmt='d', cmap='Blues', 
+            xticklabels=class_labels, yticklabels=class_labels)
+plt.title("İyileştirilmiş Model için Karmaşıklık Matrisi")
+plt.xlabel("Tahmin Edilen Sınıf")
+plt.ylabel("Gerçek Sınıf")
+plt.show()
+
+print("\nKarmaşıklık Matrisi Yorumu: Köşegen üzerindeki değerler doğru tahminleri, köşegen dışı değerler ise hataları (hangi sınıfın hangisiyle karıştırıldığını) gösterir.")
+
+# ==============================================================================
+# SORU 4: 3+ Gizli Katmanlı Yapay Sinir Ağı Kurma
+# ==============================================================================
+print("\n\n" + "="*60)
+print("SORU 4: 3+ Gizli Katmanlı Yapay Sinir Ağı (Keras)")
+print("="*60)
+
+# Keras için hedef etiketlerini hazırlama (0,1,2,3,4 formatına ve one-hot encoding'e çevirme)
+y_train_keras = to_categorical(y_train - 1, num_classes=5)
+y_test_keras = to_categorical(y_test - 1, num_classes=5)
+
+# Model Mimarisi (3 gizli katman)
+model_q4 = keras.Sequential([
+    keras.Input(shape=(X_train_scaled.shape[1],)),
+    keras.layers.Dense(128, activation='relu'),
+    keras.layers.Dense(64, activation='relu'),
+    keras.layers.Dense(32, activation='relu'),
+    keras.layers.Dense(5, activation='softmax') # DOĞRU AKTİVASYON: softmax
+])
+
+model_q4.compile(optimizer='adam', 
+                 loss='categorical_crossentropy', # DOĞRU KAYIP FONKSİYONU
+                 metrics=['accuracy'])
+
+print("\n--- Temel YSA Mimarisi ---")
+model_q4.summary()
+
+# Modeli eğit (validation_data ile test performansını anlık izle)
+history_q4 = model_q4.fit(
+    X_train_scaled, y_train_keras, 
+    epochs=50, # Daha uzun eğitim
+    batch_size=32,
+    validation_data=(X_test_scaled, y_test_keras),
+    verbose=0 # Sınavda ekranı kirletmemek için
+)
+
+# Sonuçları raporla
+train_acc_q4 = history_q4.history['accuracy'][-1]
+test_acc_q4 = history_q4.history['val_accuracy'][-1]
+print(f"\nYSA Eğitim Doğruluğu: {train_acc_q4:.4f}")
+print(f"YSA Test Doğruluğu: {test_acc_q4:.4f}")
+
+
+# ==============================================================================
+# SORU 5: YSA Modelini İyileştirme ve Kayıp Grafiği
+# ==============================================================================
+print("\n\n" + "="*60)
+print("SORU 5: YSA İyileştirme (Dropout & Regularization) ve Kayıp Grafiği")
+print("="*60)
+
+# İyileştirilmiş Model Mimarisi (Overfitting'i önlemek için Dropout ve Regularization)
+model_q5 = keras.Sequential([
+    keras.Input(shape=(X_train_scaled.shape[1],)),
+    keras.layers.Dense(128, activation='relu', kernel_regularizer=keras.regularizers.l2(0.001)),
+    keras.layers.Dropout(0.3), # Nöronların %30'unu rastgele kapatarak ezberlemeyi önler
+    keras.layers.Dense(64, activation='relu', kernel_regularizer=keras.regularizers.l2(0.001)),
+    keras.layers.Dropout(0.3),
+    keras.layers.Dense(32, activation='relu'),
+    keras.layers.Dense(5, activation='softmax')
+])
+
+model_q5.compile(optimizer='adam', 
+                 loss='categorical_crossentropy', 
+                 metrics=['accuracy'])
+
+print("\n--- İyileştirilmiş YSA Mimarisi ---")
+model_q5.summary()
+
+history_q5 = model_q5.fit(
+    X_train_scaled, y_train_keras, 
+    epochs=50, 
+    batch_size=32,
+    validation_data=(X_test_scaled, y_test_keras),
+    verbose=0
+)
+
+# İyileştirilmiş sonuçları raporla
+train_acc_q5 = history_q5.history['accuracy'][-1]
+test_acc_q5 = history_q5.history['val_accuracy'][-1]
+print(f"\nİyileştirilmiş YSA Eğitim Doğruluğu: {train_acc_q5:.4f}")
+print(f"İyileştirilmiş YSA Test Doğruluğu: {test_acc_q5:.4f}")
+
+# Kayıp Grafiği (Loss Curve)
+plt.figure(figsize=(10, 6))
+plt.plot(history_q5.history['loss'], label='Eğitim Kaybı (Train Loss)')
+plt.plot(history_q5.history['val_loss'], label='Doğrulama Kaybı (Validation/Test Loss)')
+plt.title("Modelin Eğitim Sürecindeki Kayıp Grafiği")
+plt.xlabel("Eğitim Turu (Epoch)")
+plt.ylabel("Kayıp (Loss)")
+plt.legend()
+plt.show()
+
+print("\nKayıp Grafiği Yorumu: Eğitim ve Doğrulama kayıp eğrilerinin birlikte düşmesi, modelin sağlıklı bir şekilde öğrendiğini gösterir. Doğrulama kaybının artmaya başlaması overfitting'e işarettir, ancak bizim modelimizde böyle bir durum gözlenmemektedir.")

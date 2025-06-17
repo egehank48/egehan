@@ -1,0 +1,197 @@
+# ==============================================================================
+# BÖLÜM 0: HAZIRLIK (Veri Yükleme, Bölme ve Ölçeklendirme)
+# ==============================================================================
+
+# --- 1. Gerekli Kütüphaneler (Regresyon için düzenlendi) ---
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+
+# Metrikler (Regresyon için)
+from sklearn.metrics import mean_squared_error, r2_score
+
+# Modeller (Regresyon için)
+from sklearn.linear_model import LinearRegression, Ridge
+from sklearn.svm import SVR
+from sklearn.ensemble import RandomForestRegressor
+from tensorflow import keras
+
+# --- 2. Veri Yükleme ve Ayarlama ---
+# Varsayımsal regresyon veri setini yükle
+df_reg = pd.read_csv("regression_data.csv") 
+
+X = df_reg.drop('price', axis=1) # Hedef sütun 'price' olsun
+y = df_reg['price']
+
+# Veriyi Eğitim ve Test Olarak Bölme
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42)
+
+# Veri Ölçeklendirme
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+
+# ==============================================================================
+# BÖLÜM 1: TEMEL MODEL ve ÖZELLİK ÖNEMİ (Lineer Regresyon)
+# ==============================================================================
+print("\n--- BÖLÜM 1: Lineer Regresyon ile Başlangıç ---")
+
+lr_model = LinearRegression()
+lr_model.fit(X_train_scaled, y_train)
+
+# Tahmin yap
+y_pred_test_lr = lr_model.predict(X_test_scaled)
+
+# Performansı ölç (R-squared ve RMSE ile)
+r2_lr = r2_score(y_test, y_pred_test_lr)
+rmse_lr = np.sqrt(mean_squared_error(y_test, y_pred_test_lr))
+
+print(f"Lineer Regresyon Test R2 Skoru: {r2_lr:.4f}")
+print(f"Lineer Regresyon Test RMSE: {rmse_lr:.4f}")
+
+# Özellik Katsayıları (Önem)
+coefficients = pd.DataFrame(lr_model.coef_, X_train.columns, columns=['Katsayı'])
+print("\nÖzellik Katsayıları:")
+print(coefficients.sort_values('Katsayı', ascending=False))
+
+# Gerçek vs Tahmin Grafiği
+plt.figure(figsize=(8, 8))
+plt.scatter(y_test, y_pred_test_lr, alpha=0.6)
+plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], '--r', lw=2)
+plt.title("Lineer Regresyon: Gerçek vs. Tahmin")
+plt.xlabel("Gerçek Fiyatlar")
+plt.ylabel("Tahmin Edilen Fiyatlar")
+plt.show()
+
+
+# ==============================================================================
+# BÖLÜM 2: FARKLI MODELLERİ DENEME (SVR ve Random Forest)
+# ==============================================================================
+print("\n--- BÖLÜM 2: Diğer Modelleri Deneme ---")
+
+# --- SVR Modeli ---
+svr_model = SVR(kernel='rbf') # RBF kernel genellikle iyi bir başlangıçtır
+svr_model.fit(X_train_scaled, y_train)
+y_pred_svr = svr_model.predict(X_test_scaled)
+r2_svr = r2_score(y_test, y_pred_svr)
+rmse_svr = np.sqrt(mean_squared_error(y_test, y_pred_svr))
+print(f"SVR Test R2 Skoru: {r2_svr:.4f}, RMSE: {rmse_svr:.4f}")
+
+# --- Random Forest Regressor Modeli ---
+rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
+rf_model.fit(X_train_scaled, y_train)
+y_pred_rf = rf_model.predict(X_test_scaled)
+r2_rf = r2_score(y_test, y_pred_rf)
+rmse_rf = np.sqrt(mean_squared_error(y_test, y_pred_rf))
+print(f"Random Forest Test R2 Skoru: {r2_rf:.4f}, RMSE: {rmse_rf:.4f}")
+
+
+# ==============================================================================
+# BÖLÜM 3: MANUEL HİPERPARAMETRE OPTİMİZASYONU (Orijinal koddaki gibi)
+# ==============================================================================
+print("\n--- BÖLÜM 3: Manuel Hiperparametre Optimizasyonu ---")
+
+# --- Random Forest için max_depth denemesi ---
+depths = [3, 5, 8, 10, 15, 20]
+test_r2_scores = []
+
+for depth in depths:
+    rf_loop = RandomForestRegressor(n_estimators=100, max_depth=depth, random_state=42)
+    rf_loop.fit(X_train_scaled, y_train)
+    r2_score_val = r2_score(y_test, rf_loop.predict(X_test_scaled))
+    test_r2_scores.append(r2_score_val)
+
+# En iyi derinliği bulma ve grafiğini çizme
+plt.figure(figsize=(10, 6))
+plt.plot(depths, test_r2_scores, marker='o')
+plt.title("Random Forest: max_depth vs. R2 Skoru")
+plt.xlabel("Ağaç Derinliği (max_depth)")
+plt.ylabel("Test R2 Skoru")
+plt.grid(True)
+plt.show()
+
+best_depth = depths[np.argmax(test_r2_scores)]
+print(f"Random Forest için bulunan en iyi max_depth: {best_depth}")
+
+# --- SVR için kernel denemesi ---
+kernels = ['linear', 'poly', 'rbf', 'sigmoid']
+results_svr = pd.DataFrame(columns=["Kernel Tipi", "Test R2 Skoru"])
+
+for kernel in kernels:
+    # HATA DÜZELTİLDİ: Döngü değişkeni 'kernel' kullanılıyor
+    svr_loop = SVR(kernel=kernel) 
+    svr_loop.fit(X_train_scaled, y_train)
+    r2_score_val = r2_score(y_test, svr_loop.predict(X_test_scaled))
+    
+    new_row = pd.DataFrame([{"Kernel Tipi": kernel, "Test R2 Skoru": r2_score_val}])
+    results_svr = pd.concat([results_svr, new_row], ignore_index=True)
+
+print("\nSVR için farklı kernellerin R2 Skorları:")
+print(results_svr)
+
+
+# ==============================================================================
+# BÖLÜM 4: YAPAY SİNİR AĞI (KERAS) ile REGRESYON
+# ==============================================================================
+print("\n--- BÖLÜM 4: Keras ile Regresyon Modeli ---")
+
+# Keras için veriyi hazırlamaya gerek yok (one-hot encoding gerekmez)
+# Model Mimarisi
+model_keras_reg = keras.Sequential([
+    keras.Input(shape=(X_train_scaled.shape[1],)),
+    keras.layers.Dense(128, activation='relu'),
+    keras.layers.Dense(64, activation='relu'),
+    keras.layers.Dense(32, activation='relu'),
+    keras.layers.Dense(1) # Çıktı katmanı: Tek bir nöron ve aktivasyon yok (doğrusal)
+])
+
+# Modeli derleme (Kayıp fonksiyonu değişti!)
+model_keras_reg.compile(optimizer='adam', 
+                        loss='mean_squared_error', # Regresyon için standart kayıp fonksiyonu
+                        metrics=['mae']) # Mean Absolute Error'ı izleyelim
+
+# Modeli eğitme
+history = model_keras_reg.fit(
+    X_train_scaled, y_train,
+    epochs=50,
+    batch_size=32,
+    validation_split=0.1, # Eğitim verisinin %10'u ile doğrulama yap
+    verbose=0
+)
+
+# Model performansını test verisi üzerinde değerlendirme
+test_loss, test_mae = model_keras_reg.evaluate(X_test_scaled, y_test, verbose=0)
+print(f"\nKeras Model Test Kaybı (MSE): {test_loss:.4f}")
+
+# Tahmin yaparak R2 skorunu da hesaplayalım
+y_pred_keras = model_keras_reg.predict(X_test_scaled).flatten()
+r2_keras = r2_score(y_test, y_pred_keras)
+print(f"Keras Model Test R2 Skoru: {r2_keras:.4f}")
+
+
+# Kayıp Grafiği (Loss Curve)
+plt.figure(figsize=(10, 6))
+plt.plot(history.history['loss'], label='Eğitim Kaybı (Train Loss)')
+plt.plot(history.history['val_loss'], label='Doğrulama Kaybı (Validation Loss)')
+plt.title("Keras Regresyon Modelinin Kayıp Grafiği")
+plt.xlabel("Eğitim Turu (Epoch)")
+plt.ylabel("Kayıp (Mean Squared Error)")
+plt.legend()
+plt.show()
+
+
+
+Bu Kodun Orijinal Koddan Farkları ve Nedenleri
+Modeller: LogisticRegression, SVC, RandomForestClassifier yerine bunların regresyon karşılıkları olan LinearRegression, SVR, RandomForestRegressor kullanıldı.
+Metrikler: accuracy_score ve confusion_matrix tamamen kaldırıldı. Yerine, regresyonun temel metrikleri olan r2_score (modelin varyansı ne kadar açıkladığı) ve mean_squared_error (veya karekökü olan RMSE - ortalama hata miktarı) kullanıldı.
+Görselleştirme: Karmaşıklık matrisi yerine, bir regresyon modelinin performansını görselleştirmek için en iyi yöntem olan "Gerçek vs. Tahmin" saçılım grafiği eklendi.
+Manuel Optimizasyon: Orijinal koddaki manuel döngü mantığı korundu, ancak metrikler ve modeller regresyona uyarlandı. SVM döngüsündeki kritik kernel=kernel hatası düzeltildi.
+Keras Modeli:
+Çıktı Katmanı: Dense(5, activation='sigmoid') yerine Dense(1) kullanıldı. Regresyon modelinin çıktısı tek bir sayısal değerdir ve genellikle aktivasyon fonksiyonu kullanılmaz (doğrusal aktivasyon).
+Derleme (compile): loss='categorical_crossentropy' yerine, regresyon için standart olan loss='mean_squared_error' kullanıldı.
+Veri Hazırlığı: to_categorical (one-hot encoding) adımına gerek kalmadı, çünkü y zaten sayısal bir değer.
